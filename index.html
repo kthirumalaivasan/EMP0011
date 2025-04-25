@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IqBot Chat</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #e9ecef;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        #chat-container {
+            width: 100%;
+            max-width: 700px;
+            background-color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 80vh;
+        }
+
+        #messages {
+            padding: 20px;
+            flex-grow: 1;
+            overflow-y: auto;
+            max-height: calc(100% - 90px);
+        }
+
+        .message {
+            padding: 12px 15px;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+
+        .user-message {
+            background-color: #f1f1f1;
+            text-align: right;
+            border-radius: 20px 20px 0 20px;
+            max-width: 70%;
+            align-self: flex-end;
+        }
+
+        .bot-message {
+            background-color: #d4edda;
+            text-align: left;
+            border-radius: 20px 20px 20px 0;
+            max-width: 70%;
+            position: relative;
+        }
+
+        #input-container {
+            display: flex;
+            padding: 15px;
+            background-color: #f7f7f7;
+            border-top: 1px solid #ddd;
+        }
+
+        #input-container input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            box-shadow: none;
+            transition: all 0.3s;
+        }
+
+        #input-container input:focus {
+            border-color: #007bff;
+        }
+
+        #input-container button {
+            padding: 12px 18px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            margin-left: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #input-container button:hover {
+            background-color: #0056b3;
+        }
+
+        .play-pause-btn {
+            position: absolute;
+            top: 50%;
+            right: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            padding: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            transform: translateY(-50%);
+        }
+
+        .play-pause-btn:hover {
+            background-color: #0056b3;
+        }
+
+        .mic-btn {
+            padding: 12px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            margin-left: 10px;
+            cursor: pointer;
+        }
+
+        .mic-btn:hover {
+            background-color: #218838;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <div id="messages"></div>
+        <div id="input-container">
+            <input type="text" id="user-input" placeholder="Type your message here..." />
+            <button onclick="sendMessage()">Send</button>
+            <button class="mic-btn" id="mic-btn" onclick="toggleMic()">🎤</button>
+        </div>
+    </div>
+
+    <script>
+        const messagesContainer = document.getElementById('messages');
+        const userInput = document.getElementById('user-input');
+        const micButton = document.getElementById('mic-btn');
+        let currentSpeech = null;
+        let isPlaying = false;
+        let isMicActive = false;
+        let recognition = null;
+
+        // Add Message
+        function addMessage(content, isBot = false) {
+            const message = document.createElement('div');
+            message.className = `message ${isBot ? 'bot-message' : 'user-message'}`;
+            message.textContent = content;
+
+            if (isBot) {
+                // Add play/pause button for bot messages
+                const playPauseBtn = document.createElement('button');
+                playPauseBtn.className = 'play-pause-btn';
+                playPauseBtn.textContent = '►';
+                playPauseBtn.onclick = () => toggleVoice(content, playPauseBtn);
+                message.appendChild(playPauseBtn);
+            }
+
+            messagesContainer.appendChild(message);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Send Message
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+            addMessage(message);
+            userInput.value = '';
+
+            try {
+                addMessage('Typing...', true); // Typing indicator
+                const response = await fetch('/iqbot', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message }),
+                });
+                const data = await response.json();
+                messagesContainer.lastChild.remove(); // Remove typing indicator
+                addMessage(data.response, true);
+            } catch (error) {
+                addMessage('Error communicating with the bot.', true);
+            }
+        }
+
+        // Send message when Enter is pressed
+        userInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Toggle Voice (Play/Pause)
+        function toggleVoice(text, btn) {
+            if (isPlaying) {
+                // Cancel the current speech to stop playback
+                speechSynthesis.cancel();
+                btn.textContent = '►'; // Update the button to show play icon
+            } else {
+                // Speak the text and change the button to show pause icon
+                speak(text);
+                btn.textContent = '❚❚'; // Update the button to show pause icon
+            }
+            isPlaying = !isPlaying; // Toggle the play/pause state
+        }
+
+        // Speak the message using Speech Synthesis API
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                currentSpeech = new SpeechSynthesisUtterance(text);
+                currentSpeech.onend = function() {
+                    isPlaying = false; // Mark as stopped after speech ends
+                };
+                speechSynthesis.speak(currentSpeech);
+            } else {
+                alert('Your browser does not support speech synthesis.');
+            }
+        }
+
+        // Start/Stop Speech Recognition (Microphone)
+        function toggleMic() {
+            if (isMicActive) {
+                stopSpeechRecognition();
+                micButton.textContent = '🎤'; // Show mic icon
+            } else {
+                startSpeechRecognition();
+                micButton.textContent = '🛑'; // Show stop icon
+            }
+            isMicActive = !isMicActive; // Toggle mic state
+        }
+
+        // Start Speech Recognition
+        function startSpeechRecognition() {
+            if (!('webkitSpeechRecognition' in window)) {
+                alert('Speech recognition is not supported in this browser.');
+                return;
+            }
+
+            recognition = new webkitSpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.start();
+
+            recognition.onresult = function(event) {
+                const userSpeech = event.results[0][0].transcript;
+                userInput.value = userSpeech;
+                sendMessage();
+            };
+
+            recognition.onerror = function(event) {
+                console.error('Speech recognition error:', event.error);
+            };
+        }
+
+        // Stop Speech Recognition
+        function stopSpeechRecognition() {
+            if (recognition) {
+                recognition.stop();
+            }
+        }
+    </script>
+</body>
+</html>
